@@ -1,9 +1,11 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+
+using Rust;
 using Facepunch.Math;
 using Network;
-using Rust;
+
 using UnityEngine;
 
 using Oxide.Core;
@@ -13,6 +15,7 @@ using Oxide.Plugins.BGradeExt;
 namespace Oxide.Plugins
 {
 
+    // ReSharper disable once StringLiteralTypo
     [Info("BGrade", "Ryan / Rustoria.co, 4seti", "1.2.0")]
     [Description("Auto update building blocks when placed")]
     public class BGrade : RustPlugin
@@ -21,9 +24,9 @@ namespace Oxide.Plugins
 
         #region Declaration
 
-
-        private ListHashSet<string> _registeredPermissions = new ListHashSet<string>();
+        private readonly ListHashSet<string> _registeredPermissions = new ListHashSet<string>();
         private readonly Dictionary<Vector3, int> _lastAttacked = new Dictionary<Vector3, int>();
+        private readonly BGradeConfig _config;
 
         private readonly Dictionary<BuildingGrade.Enum, ulong[]> _gradesSkin =
             new Dictionary<BuildingGrade.Enum, ulong[]>
@@ -89,30 +92,36 @@ namespace Oxide.Plugins
 
         #region Config
 
-        private bool ConfigChanged;
+        private class BGradeConfig
+        {
+            internal bool ConfigChanged;
 
-        // Timer settings
-        private bool AllowTimer;
-        private int MaxTimer;
-        private bool UpgradeAnimation;
-        private int DefaultTimer;
+            // Timer settings
+            internal bool AllowTimer;
+            internal int MaxTimer;
+            internal bool UpgradeAnimation;
+            internal int DefaultTimer;
 
-        // Last attack settings
-        private bool CheckLastAttack;
-        private int UpgradeCooldown;
+            // Last attack settings
+            internal bool CheckLastAttack;
+            internal int UpgradeCooldown;
 
-        // Command settings
-        private List<string> ChatCommands;
-        private List<string> ConsoleCommands;
+            // Command settings
+            internal List<string> ChatCommands;
+            internal List<string> ConsoleCommands;
 
-        // Refund settings
-        private bool RefundOnBlock;
+            // Refund settings
+            internal bool RefundOnBlock;
 
-        // Player Component settings
-        private bool DestroyOnDisconnect;
+            // Player Component settings
+            internal bool DestroyOnDisconnect;
+        }
+        
 
+        // ReSharper disable once ConvertConstructorToMemberInitializers
         public BGrade()
         {
+            _config = new BGradeConfig();
         }
 
         protected override void LoadDefaultConfig()
@@ -122,25 +131,25 @@ namespace Oxide.Plugins
 
         private void InitConfig()
         {
-            AllowTimer = GetConfig(true, "Timer Settings", "Enabled");
-            DefaultTimer = GetConfig(30, "Timer Settings", "Default Timer");
-            MaxTimer = GetConfig(180, "Timer Settings", "Max Timer");
-            UpgradeAnimation = GetConfig(true, "Behavior", "Play Upgrade Animation");
-            ChatCommands = GetConfig(new List<string>
+            _config.AllowTimer = GetConfig(true, "Timer Settings", "Enabled");
+            _config.DefaultTimer = GetConfig(30, "Timer Settings", "Default Timer");
+            _config.MaxTimer = GetConfig(180, "Timer Settings", "Max Timer");
+            _config.UpgradeAnimation = GetConfig(true, "Behavior", "Play Upgrade Animation");
+            _config.ChatCommands = GetConfig(new List<string>(2)
             {
                 "bgrade",
                 "grade"
             }, "Command Settings", "Chat Commands");
-            ConsoleCommands = GetConfig(new List<string>
+            _config.ConsoleCommands = GetConfig(new List<string>(1)
             {
                 "bgrade.up"
             }, "Command Settings", "Console Commands");
-            CheckLastAttack = GetConfig(true, "Building Attack Settings", "Enabled");
-            UpgradeCooldown = GetConfig(30, "Building Attack Settings", "Cooldown Time");
-            RefundOnBlock = GetConfig(true, "Refund Settings", "Refund on Block");
-            DestroyOnDisconnect = GetConfig(false, "Destroy Data on Player Disconnect (for high pop servers)");
+            _config.CheckLastAttack = GetConfig(true, "Building Attack Settings", "Enabled");
+            _config.UpgradeCooldown = GetConfig(30, "Building Attack Settings", "Cooldown Time");
+            _config.RefundOnBlock = GetConfig(true, "Refund Settings", "Refund on Block");
+            _config.DestroyOnDisconnect = GetConfig(false, "Destroy Data on Player Disconnect (for high pop servers)");
 
-            if (ConfigChanged)
+            if (_config.ConfigChanged)
             {
                 PrintWarning("Updated configuration file with new/changed values.");
                 SaveConfig();
@@ -156,7 +165,7 @@ namespace Oxide.Plugins
             }
 
             Config.Set(path.Concat(new object[] { defaultVal }).ToArray());
-            ConfigChanged = true;
+            _config.ConfigChanged = true;
             return defaultVal;
         }
 
@@ -166,7 +175,7 @@ namespace Oxide.Plugins
 
         private void RegisterPermissions()
         {
-            _registeredPermissions = new ListHashSet<string>();
+            _registeredPermissions.Clear();
 
             for (var i = 1; i < 5; i++)
             {
@@ -190,12 +199,12 @@ namespace Oxide.Plugins
 
         private void RegisterCommands()
         {
-            foreach (var command in ChatCommands)
+            foreach (var command in _config.ChatCommands)
             {
                 cmd.AddChatCommand(command, this, BGradeCommand);
             }
 
-            foreach (var command in ConsoleCommands)
+            foreach (var command in _config.ConsoleCommands)
             {
                 cmd.AddConsoleCommand(command, this, nameof(BGradeUpCommand));
             }
@@ -219,7 +228,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            if (RefundOnBlock)
+            if (_config.RefundOnBlock)
             {
                 foreach (var itemToGive in buildingBlock.BuildCost())
                 {
@@ -256,11 +265,7 @@ namespace Oxide.Plugins
 
             foreach (var itemAmount in costToBuild)
             {
-                if (!itemsToTake.ContainsKey(itemAmount.itemid))
-                {
-                    itemsToTake.Add(itemAmount.itemid, 0);
-                }
-
+                itemsToTake.TryAdd(itemAmount.itemid, 0);
                 itemsToTake[itemAmount.itemid] += (int)itemAmount.amount;
             }
 
@@ -290,18 +295,12 @@ namespace Oxide.Plugins
 
         private bool WasAttackedRecently(Vector3 position)
         {
-            int time;
-            if (!_lastAttacked.TryGetValue(position, out time))
+            if (!_lastAttacked.TryGetValue(position, out var time))
             {
                 return false;
             }
 
-            if (time < Epoch.Current)
-            {
-                return true;
-            }
-
-            return false;
+            return time < Epoch.Current;
         }
 
         #endregion
@@ -316,13 +315,13 @@ namespace Oxide.Plugins
             RegisterCommands();
             RegisterPermissions();
 
-            if (!CheckLastAttack)
+            if (!_config.CheckLastAttack)
             {
                 Unsubscribe(nameof(OnEntityDeath));
                 Unsubscribe(nameof(OnServerSave));
             }
 
-            if (!DestroyOnDisconnect)
+            if (!_config.DestroyOnDisconnect)
             {
                 Unsubscribe(nameof(OnPlayerDisconnected));
             }
@@ -369,13 +368,12 @@ namespace Oxide.Plugins
                 return;
             }
 
-            BGradePlayer bgradePlayer;
-            if (!BGradePlayer.Players.TryGetValue(player, out bgradePlayer))
+            if (!BGradePlayer.Players.TryGetValue(player, out var bGradePlayer))
             {
                 return;
             }
 
-            var playerGrade = bgradePlayer.GetGrade();
+            var playerGrade = bGradePlayer.GetGrade();
             if (playerGrade == 0)
             {
                 return;
@@ -388,9 +386,9 @@ namespace Oxide.Plugins
 
             var hookCall = Interface.Call(Labels.CanBGradeHookName, player, playerGrade, buildingBlock, plan);
 
-            if (hookCall is int)
+            if (hookCall is int call)
             {
-                DealWithHookResult(player, buildingBlock, (int)hookCall, gameObject);
+                DealWithHookResult(player, buildingBlock, call, gameObject);
                 return;
             }
 
@@ -399,7 +397,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            if (CheckLastAttack && WasAttackedRecently(buildingBlock.transform.position))
+            if (_config.CheckLastAttack && WasAttackedRecently(buildingBlock.transform.position))
             {
                 return;
             }
@@ -411,8 +409,7 @@ namespace Oxide.Plugins
 
             if (!player.HasPluginPerm(Labels.NoResPermissionName))
             {
-                Dictionary<int, int> itemsToTake;
-                var resourceResponse = TakeResources(player, playerGrade, buildingBlock, out itemsToTake);
+                var resourceResponse = TakeResources(player, playerGrade, buildingBlock, out var itemsToTake);
                 if (!string.IsNullOrEmpty(resourceResponse))
                 {
                     player.ChatMessage(resourceResponse);
@@ -425,15 +422,15 @@ namespace Oxide.Plugins
                 }
             }
 
-            if (AllowTimer)
+            if (_config.AllowTimer)
             {
-                bgradePlayer.UpdateTime();
+                bGradePlayer.UpdateTime();
             }
 
             ulong skinId = 0;
             if (player.HasPluginPerm(Labels.SkinsPermissionName))
             {
-                skinId = bgradePlayer.GetSkin();
+                skinId = bGradePlayer.GetSkin();
             }
 
             buildingBlock.SetGrade((BuildingGrade.Enum)playerGrade);
@@ -441,7 +438,7 @@ namespace Oxide.Plugins
             buildingBlock.StartBeingRotatable();
             buildingBlock.SendNetworkUpdate();
             
-            if (UpgradeAnimation)
+            if (_config.UpgradeAnimation)
             {
                 var target = new RpcTarget
                 {
@@ -474,8 +471,8 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            var bgradePlayer = BGradePlayer.Players[player];
-            if (bgradePlayer.GetGrade() == 0)
+            var bGradePlayer = BGradePlayer.Players[player];
+            if (bGradePlayer.GetGrade() == 0)
             {
                 return null;
             }
@@ -493,19 +490,18 @@ namespace Oxide.Plugins
 
             if (info.damageTypes.GetMajorityDamageType() == DamageType.Explosion)
             {
-                _lastAttacked[buildingBlock.transform.position] = Epoch.Current + UpgradeCooldown;
+                _lastAttacked[buildingBlock.transform.position] = Epoch.Current + _config.UpgradeCooldown;
             }
         }
 
         private void OnPlayerDisconnected(BasePlayer player)
         {
-            BGradePlayer bgradePlayer;
-            if (!BGradePlayer.Players.TryGetValue(player, out bgradePlayer))
+            if (!BGradePlayer.Players.TryGetValue(player, out var bGradePlayer))
             {
                 return;
             }
 
-            bgradePlayer.Destroy();
+            bGradePlayer.Destroy();
         }
 
         #endregion
@@ -526,22 +522,12 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var chatMsgs = new List<string>();
-
             switch (args[0].ToLower())
             {
                 case Labels.ZeroGrade:
                 {
-                    player.ChatMessage(Labels.NoticeDisabled.Lang(player.UserIDString));
-                    BGradePlayer bgradePlayer;
-                    if (BGradePlayer.Players.TryGetValue(player, out bgradePlayer))
-                    {
-                        bgradePlayer.DestroyTimer();
-                        bgradePlayer.SetGrade(0);
-                        bgradePlayer.SetSkin(0);
-                    }
-
-                    return;
+                    HandleChatGradeResetCommand(player);
+                    break;
                 }
 
                 case Labels.FirstGrade:
@@ -549,65 +535,15 @@ namespace Oxide.Plugins
                 case Labels.ThirdGrade:
                 case Labels.FourthGrade:
                 {
-                    if (!player.HasPluginPerm(Labels.AllPermissionName) && !player.HasPluginPerm(args[0]))
-                    {
-                        player.ChatMessage(Labels.Permission.Lang(player.UserIDString));
-                        return;
-                    }
-
-                    var grade = Convert.ToInt32(args[0]);
-                    ulong skinGameId = 0;
-                    string skinName;
-                    if (args.Length > 1 && player.HasPluginPerm(Labels.SkinsPermissionName))
-                    {
-                        uint skinIndex;
-                        if (!uint.TryParse(args[1], out skinIndex))
-                        {
-                            player.ChatMessage(Labels.ErrorInvalidArgs.Lang(player.UserIDString, command));
-                            return;
-                        }
-
-                        var supportedSkins = _gradesSkin[(BuildingGrade.Enum)grade];
-                        if (supportedSkins.Length >= skinIndex)
-                        {
-                            skinGameId = skinIndex == 0 ? 0L : supportedSkins[skinIndex - 1];
-                            skinName = (Labels.WordsLabelPrefix + _skinNames[(BuildingGrade.Enum)grade][skinIndex - 1]).Lang(player.UserIDString);
-                        }
-                        else
-                        {
-                            skinName = Labels.DefaultSkinName;
-                        }
-                        chatMsgs.Add(Labels.NoticeSetGradeWithSkin.Lang(player.UserIDString, grade, skinName));
-                    }
-                    else
-                    {
-                        chatMsgs.Add(Labels.NoticeSetGrade.Lang(player.UserIDString, grade));
-                    }
-
-                    BGradePlayer bgradePlayer;
-                    if (!BGradePlayer.Players.TryGetValue(player, out bgradePlayer))
-                    {
-                        bgradePlayer = player.gameObject.AddComponent<BGradePlayer>();
-                    }
-
-                    bgradePlayer.SetGrade(grade);
-                    bgradePlayer.SetSkin(skinGameId);
-                    var time = bgradePlayer.GetTime();
-
-                    if (AllowTimer && time > 0)
-                    {
-                        chatMsgs.Add(Labels.NoticeTime.Lang(player.UserIDString, time));
-                    }
-
-                    player.ChatMessage(string.Join("\n", chatMsgs.ToArray()));
-                    return;
+                    HandleChatGradeCommand(player, command, args);
+                    break;
                 }
 
-                case "t":
+                case Labels.TimerCommand:
                 {
-                    if (!AllowTimer)
+                    if (!_config.AllowTimer)
                     {
-                        return;
+                        break;
                     }
 
                     if (args.Length == 1)
@@ -615,84 +551,146 @@ namespace Oxide.Plugins
                         goto default;
                     }
 
-                    int time;
-                    if (!int.TryParse(args[1], out time) || time <= 0)
-                    {
-                        player.ChatMessage(Labels.ErrorInvalidTime.Lang(player.UserIDString, args[1]));
-                        return;
-                    }
-
-                    if (time > MaxTimer)
-                    {
-                        player.ChatMessage(Labels.ErrorTimerTooLong.Lang(player.UserIDString, MaxTimer));
-                        return;
-                    }
-
-                    BGradePlayer bgradePlayer;
-                    if (!BGradePlayer.Players.TryGetValue(player, out bgradePlayer))
-                    {
-                        bgradePlayer = player.gameObject.AddComponent<BGradePlayer>();
-                    }
-
-                    player.ChatMessage(Labels.NoticeSetTime.Lang(player.UserIDString, time));
-                    bgradePlayer.SetTime(time);
-                    return;
+                    HandleChatTimerCommand(player, args);
+                    break;
                 }
 
-                case Labels.HelpCommandName:
+                case Labels.HelpCommand:
                 {
-                    chatMsgs.Add(Labels.CommandHelp.Lang(player.UserIDString));
-                    if (AllowTimer)
-                    {
-                        chatMsgs.Add(Labels.CommandHelpT.Lang(player.UserIDString, command));
-                        chatMsgs.Add((Labels.CommandHelpPrefix + Labels.ZeroGrade).Lang(player.UserIDString, command));
-                    }
-
-                    for (var i = 1; i < 5; i++)
-                    {
-                        if (player.HasPluginPerm(i.ToString()) || player.HasPluginPerm(Labels.AllPermissionName))
-                        {
-                            chatMsgs.Add($"{Labels.CommandHelpPrefix}{i}".Lang(player.UserIDString, command));
-                        }
-                    }
-
-                    if (player.HasPluginPerm(Labels.SkinsPermissionName))
-                    {
-                        chatMsgs.Add(Labels.CommandHelpSkin.Lang(player.UserIDString, command));
-                        chatMsgs.Add(Labels.CommandHelpSkinAvailability.Lang(player.UserIDString, _gradesSkin[BuildingGrade.Enum.Wood].Length, _gradesSkin[BuildingGrade.Enum.Stone].Length, _gradesSkin[BuildingGrade.Enum.Metal].Length));
-                    }
-
-                    if (chatMsgs.Count <= 3 && !player.HasPluginPerm(Labels.AllPermissionName))
-                    {
-                        player.ChatMessage(Labels.Permission.Lang(player.UserIDString));
-                        return;
-                    }
-
-                    BGradePlayer bgradePlayer;
-                    if (BGradePlayer.Players.TryGetValue(player, out bgradePlayer))
-                    {
-                        chatMsgs.Add(Labels.CommandSettings.Lang(player.UserIDString));
-                        if (AllowTimer)
-                        {
-                            chatMsgs.Add(Labels.CommandSettingsTimer.Lang(player.UserIDString, bgradePlayer.GetTime(false)));
-                        }
-
-                        var fetchedGrade = bgradePlayer.GetGrade();
-                        var fetchedSkin = bgradePlayer.GetSkin();
-                        chatMsgs.Add(Labels.CommandSettingsGrade.Lang(player.UserIDString,
-                            fetchedGrade == 0 ? Labels.WordsDisabled.Lang(player.UserIDString) : fetchedGrade.ToString()));
-                    }
-
-                    player.ChatMessage(string.Join("\n", chatMsgs.ToArray()));
-                    return;
+                    HandleChatHelpCommand(player, command);
+                    break;
                 }
 
                 default:
                 {
                     player.ChatMessage(Labels.ErrorInvalidArgs.Lang(player.UserIDString, command));
-                    return;
+                    break;
                 }
             }
+        }
+
+        private void HandleChatHelpCommand(BasePlayer player, string command)
+        {
+            var chatMessages = new List<string>(9) { Labels.CommandHelp.Lang(player.UserIDString) };
+            if (_config.AllowTimer)
+            {
+                chatMessages.Add(Labels.CommandHelpT.Lang(player.UserIDString, command));
+                chatMessages.Add((Labels.CommandHelpPrefix + Labels.ZeroGrade).Lang(player.UserIDString, command));
+            }
+
+            for (var i = 1; i < 5; i++)
+            {
+                if (player.HasPluginPerm(i.ToString()) || player.HasPluginPerm(Labels.AllPermissionName))
+                {
+                    chatMessages.Add($"{Labels.CommandHelpPrefix}{i}".Lang(player.UserIDString, command));
+                }
+            }
+
+            if (player.HasPluginPerm(Labels.SkinsPermissionName))
+            {
+                chatMessages.Add(Labels.CommandHelpSkin.Lang(player.UserIDString, command));
+                chatMessages.Add(Labels.CommandHelpSkinAvailability.Lang(player.UserIDString, _gradesSkin[BuildingGrade.Enum.Wood].Length, _gradesSkin[BuildingGrade.Enum.Stone].Length, _gradesSkin[BuildingGrade.Enum.Metal].Length));
+            }
+
+            if (chatMessages.Count <= 3 && !player.HasPluginPerm(Labels.AllPermissionName))
+            {
+                player.ChatMessage(Labels.Permission.Lang(player.UserIDString));
+                return;
+            }
+
+            if (BGradePlayer.Players.TryGetValue(player, out var bGradePlayer))
+            {
+                chatMessages.Add(Labels.CommandSettings.Lang(player.UserIDString));
+                if (_config.AllowTimer)
+                {
+                    chatMessages.Add(Labels.CommandSettingsTimer.Lang(player.UserIDString, bGradePlayer.GetTime(false)));
+                }
+
+                var fetchedGrade = bGradePlayer.GetGrade();
+                chatMessages.Add(Labels.CommandSettingsGrade.Lang(player.UserIDString, fetchedGrade == 0 ? Labels.WordsDisabled.Lang(player.UserIDString) : fetchedGrade.ToString()));
+            }
+
+            player.ChatMessage(string.Join("\n", chatMessages.ToArray()));
+        }
+
+        private void HandleChatTimerCommand(BasePlayer player, string[] args)
+        {
+            if (!int.TryParse(args[1], out var time) || time <= 0)
+            {
+                player.ChatMessage(Labels.ErrorInvalidTime.Lang(player.UserIDString, args[1]));
+                return;
+            }
+
+            if (time > _config.MaxTimer)
+            {
+                player.ChatMessage(Labels.ErrorTimerTooLong.Lang(player.UserIDString, _config.MaxTimer));
+                return;
+            }
+
+            if (!BGradePlayer.Players.TryGetValue(player, out var bGradePlayer))
+            {
+                bGradePlayer = player.gameObject.AddComponent<BGradePlayer>();
+            }
+
+            player.ChatMessage(Labels.NoticeSetTime.Lang(player.UserIDString, time));
+            bGradePlayer.SetTime(time);
+        }
+
+        private static void HandleChatGradeResetCommand(BasePlayer player)
+        {
+            player.ChatMessage(Labels.NoticeDisabled.Lang(player.UserIDString));
+            if (BGradePlayer.Players.TryGetValue(player, out var bGradePlayer))
+            {
+                bGradePlayer.DestroyTimer();
+                bGradePlayer.SetGrade(0);
+                bGradePlayer.SetSkin(0);
+            }
+        }
+
+        private void HandleChatGradeCommand(BasePlayer player, string command, string[] args)
+        {
+            var chatMessages = new List<string>(2);
+            if (!player.HasPluginPerm(Labels.AllPermissionName) && !player.HasPluginPerm(args[0]))
+            {
+                player.ChatMessage(Labels.Permission.Lang(player.UserIDString));
+                return;
+            }
+
+            var grade = Convert.ToInt32(args[0]);
+            ulong skinGameId = 0;
+            string skinName = Labels.DefaultSkinName;
+            if (args.Length > 1 && player.HasPluginPerm(Labels.SkinsPermissionName))
+            {
+                if (!uint.TryParse(args[1], out var skinIndex))
+                {
+                    player.ChatMessage(Labels.ErrorInvalidArgs.Lang(player.UserIDString, command));
+                    return;
+                }
+
+                var supportedSkins = _gradesSkin[(BuildingGrade.Enum)grade];
+                if (supportedSkins.Length >= skinIndex)
+                {
+                    skinGameId = skinIndex == 0 ? 0L : supportedSkins[skinIndex - 1];
+                    skinName = (Labels.WordsLabelPrefix + _skinNames[(BuildingGrade.Enum)grade][skinIndex - 1]).Lang(player.UserIDString);
+                }
+            }
+            chatMessages.Add(Labels.NoticeSetGradeWithSkin.Lang(player.UserIDString, grade, skinName));
+
+            if (!BGradePlayer.Players.TryGetValue(player, out var bGradePlayer))
+            {
+                bGradePlayer = player.gameObject.AddComponent<BGradePlayer>();
+            }
+
+            bGradePlayer.SetGrade(grade);
+            bGradePlayer.SetSkin(skinGameId);
+            var time = bGradePlayer.GetTime();
+
+            if (_config.AllowTimer && time > 0)
+            {
+                chatMessages.Add(Labels.NoticeTime.Lang(player.UserIDString, time));
+            }
+            
+            player.ChatMessage(string.Join("\n", chatMessages.ToArray()));
         }
 
         private void BGradeUpCommand(ConsoleSystem.Arg arg)
@@ -709,13 +707,12 @@ namespace Oxide.Plugins
                 return;
             }
 
-            BGradePlayer bgradePlayer;
-            if (!BGradePlayer.Players.TryGetValue(player, out bgradePlayer))
+            if (!BGradePlayer.Players.TryGetValue(player, out var bGradePlayer))
             {
-                bgradePlayer = player.gameObject.AddComponent<BGradePlayer>();
+                bGradePlayer = player.gameObject.AddComponent<BGradePlayer>();
             }
 
-            var grade = bgradePlayer.GetGrade() + 1;
+            var grade = bGradePlayer.GetGrade() + 1;
             var count = 0;
 
             if (!player.HasPluginPerm(Labels.AllPermissionName))
@@ -728,7 +725,7 @@ namespace Oxide.Plugins
                         grade = 1;
                     }
 
-                    if (count > bgradePlayer.GetGrade() + 4)
+                    if (count > bGradePlayer.GetGrade() + 4)
                     {
                         player.ChatMessage(Labels.Permission.Lang(player.UserIDString));
                         return;
@@ -740,18 +737,18 @@ namespace Oxide.Plugins
                 grade = 1;
             }
 
-            var chatMsgs = new List<string>();
-            bgradePlayer.SetGrade(grade);
-            bgradePlayer.SetSkin(0);
-            var time = bgradePlayer.GetTime();
+            var chatMessages = new List<string>(2);
+            bGradePlayer.SetGrade(grade);
+            bGradePlayer.SetSkin(0);
+            var time = bGradePlayer.GetTime();
 
-            chatMsgs.Add(Labels.NoticeSetGrade.Lang(player.UserIDString, grade));
-            if (AllowTimer && time > 0)
+            chatMessages.Add(Labels.NoticeSetGradeWithSkin.Lang(player.UserIDString, grade, Labels.DefaultSkinName));
+            if (_config.AllowTimer && time > 0)
             {
-                chatMsgs.Add(Labels.NoticeTime.Lang(player.UserIDString, time));
+                chatMessages.Add(Labels.NoticeTime.Lang(player.UserIDString, time));
             }
 
-            player.ChatMessage(string.Join("\n", chatMsgs));
+            player.ChatMessage(string.Join("\n", chatMessages));
         }
 
         #endregion
@@ -769,6 +766,7 @@ namespace Oxide.Plugins
             private int _time;
             private Timer _timer;
 
+            // ReSharper disable once UnusedMember.Local
             public void Awake()
             {
                 var attachedPlayer = GetComponent<BasePlayer>();
@@ -785,7 +783,7 @@ namespace Oxide.Plugins
 
             public int GetTime(bool updateTime = true)
             {
-                if (!Instance.AllowTimer)
+                if (!Instance._config.AllowTimer)
                 {
                     return 0;
                 }
@@ -795,7 +793,7 @@ namespace Oxide.Plugins
                     UpdateTime();
                 }
 
-                return _time != 0 ? _time : Instance.DefaultTimer;
+                return _time != 0 ? _time : Instance._config.DefaultTimer;
             }
 
             public void UpdateTime()
@@ -856,6 +854,7 @@ namespace Oxide.Plugins
                 Destroy(this);
             }
 
+            // ReSharper disable once UnusedMember.Local
             public void OnDestroy()
             {
                 if (Players.ContainsKey(_player))
@@ -870,8 +869,7 @@ namespace Oxide.Plugins
 
         private static class Labels
         {
-
-            internal const string HelpCommandName = "help";
+            internal const string HelpCommand = "help";
             internal const string OnStructureUpdateHookName = "OnStructureUpgrade";
             internal const string DoUpgradeEffectFunctionName = "DoUpgradeEffect";
             internal const string SkinsPermissionName = "skins";
@@ -907,6 +905,8 @@ namespace Oxide.Plugins
             internal const string ThirdGrade = "3";
             internal const string FourthGrade = "4";
 
+            internal const string TimerCommand = "t";
+
             internal const string Adobe = "Adobe";
             internal const string Brick = "Brick";
             internal const string Brutalist = "Brutalist";
@@ -920,8 +920,8 @@ namespace Oxide.Plugins.BGradeExt
 {
     public static class BGradeExtensions
     {
-        private static readonly Permission permission = Interface.Oxide.GetLibrary<Permission>();
-        private static readonly Lang lang = Interface.Oxide.GetLibrary<Lang>();
+        private static readonly Permission PermissionLibrary = Interface.Oxide.GetLibrary<Permission>();
+        private static readonly Lang LangLibrary = Interface.Oxide.GetLibrary<Lang>();
 
         public static bool HasAnyPermission(this BasePlayer player, ListHashSet<string> perms)
         {
@@ -940,17 +940,17 @@ namespace Oxide.Plugins.BGradeExt
 
         public static bool HasPermission(this BasePlayer player, string perm)
         {
-            return permission.UserHasPermission(player.UserIDString, perm);
+            return PermissionLibrary.UserHasPermission(player.UserIDString, perm);
         }
 
         public static bool HasPluginPerm(this BasePlayer player, string perm)
         {
-            return permission.UserHasPermission(player.UserIDString, BGrade.Instance.Name.ToLower() + "." + perm);
+            return PermissionLibrary.UserHasPermission(player.UserIDString, BGrade.Instance.Name.ToLower() + "." + perm);
         }
 
         public static string Lang(this string key, string id = null, params object[] args)
         {
-            return string.Format(lang.GetMessage(key, BGrade.Instance, id), args);
+            return string.Format(LangLibrary.GetMessage(key, BGrade.Instance, id), args);
         }
 
         public static bool HasItemAmount(this BasePlayer player, int itemId, int itemAmount)
