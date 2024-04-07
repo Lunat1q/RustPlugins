@@ -668,9 +668,9 @@ namespace Oxide.Plugins
                 }
 
                 var supportedSkins = _gradesSkin[(BuildingGrade.Enum)grade];
-                if (supportedSkins.Length >= skinIndex)
+                if (skinIndex > 0 && supportedSkins.Length >= skinIndex)
                 {
-                    skinGameId = skinIndex == 0 ? 0L : supportedSkins[skinIndex - 1];
+                    skinGameId = supportedSkins[skinIndex - 1];
                     skinName = (Labels.WordsLabelPrefix + _skinNames[(BuildingGrade.Enum)grade][skinIndex - 1]).Lang(player.UserIDString);
                 }
             }
